@@ -797,7 +797,7 @@ static int lxc_spawn(struct lxc_handler *handler)
 	if (lxc_sync_init(handler))
 		return -1;
 
-	handler->clone_flags = CLONE_NEWPID|CLONE_NEWNS;
+	handler->clone_flags = CLONE_NEWNS;
 	if (!lxc_list_empty(&handler->conf->id_map)) {
 		INFO("Cloning a new user namespace");
 		handler->clone_flags |= CLONE_NEWUSER;
@@ -848,6 +848,12 @@ static int lxc_spawn(struct lxc_handler *handler)
 	} else {
 		INFO("Inheriting a UTS namespace");
 	}
+
+    if (handler->conf->inherit_ns_fd[LXC_NS_PID] == -1) {
+        handler->clone_flags |= CLONE_NEWPID;
+    } else {
+        INFO("Inheriting a PID namespace");
+    }
 
 
 	if (!cgroup_init(handler)) {
