@@ -394,6 +394,11 @@ static int dir_mount(struct bdev *bdev)
 	}
 
 	ret = mount(bdev->src, bdev->dest, "bind", MS_BIND | MS_REC | mntflags, mntdata);
+	if (mntflags & MS_RDONLY) {
+		DEBUG("remounting %s on %s to respect bind or remount options",
+				bdev->src, bdev->dest);
+		ret = mount(bdev->src, bdev->dest, "bind", MS_BIND | MS_REC | mntflags | MS_REMOUNT, mntdata);
+	}
 	free(mntdata);
 	return ret;
 }
@@ -2592,12 +2597,20 @@ static int aufs_mount(struct bdev *bdev)
 	if (mntdata) {
 		len = strlen(lower) + strlen(upper) + strlen(runpath) + strlen("br==rw:=ro,,xino=/aufs.xino") + strlen(mntdata) + 1;
 		options = alloca(len);
-		ret = snprintf(options, len, "br=%s=rw:%s=ro,%s,xino=%s/aufs.xino", upper, lower, mntdata, runpath);
+		if (mntflags & MS_RDONLY) {
+			ret = snprintf(options, len, "br=%s=ro:%s=ro,%s,xino=%s/aufs.xino", upper, lower, mntdata, runpath);
+		} else {
+			ret = snprintf(options, len, "br=%s=rw:%s=ro,%s,xino=%s/aufs.xino", upper, lower, mntdata, runpath);
+		}
 	}
 	else {
 		len = strlen(lower) + strlen(upper) + strlen(runpath) + strlen("br==rw:=ro,xino=/aufs.xino") + 1;
 		options = alloca(len);
-		ret = snprintf(options, len, "br=%s=rw:%s=ro,xino=%s/aufs.xino", upper, lower, runpath);
+		if (mntflags & MS_RDONLY) {
+			ret = snprintf(options, len, "br=%s=rw:%s=ro,xino=%s/aufs.xino", upper, lower, runpath);
+		} else {
+			ret = snprintf(options, len, "br=%s=rw:%s=ro,xino=%s/aufs.xino", upper, lower, runpath);
+		}
 	}
 
 	free(rundir);
