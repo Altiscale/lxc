@@ -531,6 +531,83 @@ static int mount_unknown_fs(const char *rootfs, const char *target,
 	return -1;
 }
 
+static int mount_entry(const char *fsname, const char *target,
+        const char *fstype, unsigned long mountflags,
+        const char *data, int optional)
+{
+#ifdef HAVE_STATVFS
+	struct statvfs sb;
+#endif
+
+    if (mount(fsname, target, fstype, mountflags & ~MS_REMOUNT, data)) {
+        if (optional) {
+            INFO("failed to mount '%s' on '%s' (optional): %s", fsname,
+                    target, strerror(errno));
+            return 0;
+        }
+        else {
+            SYSERROR("failed to mount '%s' on '%s'", fsname, target);
+            return -1;
+        }
+    }
+
+    if ((mountflags & MS_REMOUNT) || (mountflags & MS_BIND)) {
+        DEBUG("remounting %s on %s to respect bind or remount options",
+                fsname ? fsname : "(none)", target ? target : "(none)");
+        unsigned long rqd_flags = 0;
+        if (mountflags & MS_RDONLY)
+            rqd_flags |= MS_RDONLY;
+#ifdef HAVE_STATVFS
+		if (statvfs(fsname, &sb) == 0) {
+			unsigned long required_flags = rqd_flags;
+			if (sb.f_flag & MS_NOSUID)
+				required_flags |= MS_NOSUID;
+			if (sb.f_flag & MS_NODEV)
+				required_flags |= MS_NODEV;
+			if (sb.f_flag & MS_RDONLY)
+				required_flags |= MS_RDONLY;
+			if (sb.f_flag & MS_NOEXEC)
+				required_flags |= MS_NOEXEC;
+			DEBUG("(at remount) flags for %s was %lu, required extra flags are %lu", fsname, sb.f_flag, required_flags);
+			/*
+			 * If this was a bind mount request, and required_flags
+			 * does not have any flags which are not already in
+			 * mountflags, then skip the remount
+			 */
+			if (!(mountflags & MS_REMOUNT)) {
+				if (!(required_flags & ~mountflags) && rqd_flags == 0) {
+					DEBUG("mountflags already was %lu, skipping remount",
+						mountflags);
+					goto skipremount;
+				}
+			}
+			mountflags |= required_flags;
+		}
+#endif
+
+        if (mount(fsname, target, fstype,
+                mountflags | MS_REMOUNT, data)) {
+            if (optional) {
+                INFO("failed to mount '%s' on '%s' (optional): %s",
+                        fsname, target, strerror(errno));
+                return 0;
+            }
+            else {
+                SYSERROR("failed to mount '%s' on '%s'",
+                        fsname, target);
+                return -1;
+            }
+        }
+    }
+
+#ifdef HAVE_STATVFS
+skipremount:
+#endif
+    DEBUG("mounted '%s' on '%s', type '%s'", fsname, target, fstype);
+
+    return 0;
+}
+
 static int mount_rootfs_dir(const char *rootfs, const char *target,
 			                const char *options)
 {
@@ -543,7 +620,8 @@ static int mount_rootfs_dir(const char *rootfs, const char *target,
 		return -1;
 	}
 
-	ret = mount(rootfs, target, "none", MS_BIND | MS_REC | mntflags, mntdata);
+//	ret = mount(rootfs, target, "none", MS_BIND | MS_REC | mntflags, mntdata);
+    ret = mount_entry(rootfs, target, "none", MS_BIND | MS_REC | mntflags, mntdata, 0);
 	free(mntdata);
 
 	return ret;
@@ -2031,82 +2109,6 @@ static char *get_field(char *src, int nfields)
 	return p;
 }
 
-static int mount_entry(const char *fsname, const char *target,
-		       const char *fstype, unsigned long mountflags,
-		       const char *data, int optional)
-{
-#ifdef HAVE_STATVFS
-	struct statvfs sb;
-#endif
-
-	if (mount(fsname, target, fstype, mountflags & ~MS_REMOUNT, data)) {
-		if (optional) {
-			INFO("failed to mount '%s' on '%s' (optional): %s", fsname,
-			     target, strerror(errno));
-			return 0;
-		}
-		else {
-			SYSERROR("failed to mount '%s' on '%s'", fsname, target);
-			return -1;
-		}
-	}
-
-	if ((mountflags & MS_REMOUNT) || (mountflags & MS_BIND)) {
-		DEBUG("remounting %s on %s to respect bind or remount options",
-		      fsname ? fsname : "(none)", target ? target : "(none)");
-		unsigned long rqd_flags = 0;
-		if (mountflags & MS_RDONLY)
-			rqd_flags |= MS_RDONLY;
-#ifdef HAVE_STATVFS
-		if (statvfs(fsname, &sb) == 0) {
-			unsigned long required_flags = rqd_flags;
-			if (sb.f_flag & MS_NOSUID)
-				required_flags |= MS_NOSUID;
-			if (sb.f_flag & MS_NODEV)
-				required_flags |= MS_NODEV;
-			if (sb.f_flag & MS_RDONLY)
-				required_flags |= MS_RDONLY;
-			if (sb.f_flag & MS_NOEXEC)
-				required_flags |= MS_NOEXEC;
-			DEBUG("(at remount) flags for %s was %lu, required extra flags are %lu", fsname, sb.f_flag, required_flags);
-			/*
-			 * If this was a bind mount request, and required_flags
-			 * does not have any flags which are not already in
-			 * mountflags, then skip the remount
-			 */
-			if (!(mountflags & MS_REMOUNT)) {
-				if (!(required_flags & ~mountflags) && rqd_flags == 0) {
-					DEBUG("mountflags already was %lu, skipping remount",
-						mountflags);
-					goto skipremount;
-				}
-			}
-			mountflags |= required_flags;
-		}
-#endif
-
-		if (mount(fsname, target, fstype,
-			  mountflags | MS_REMOUNT, data)) {
-			if (optional) {
-				INFO("failed to mount '%s' on '%s' (optional): %s",
-					 fsname, target, strerror(errno));
-				return 0;
-			}
-			else {
-				SYSERROR("failed to mount '%s' on '%s'",
-					 fsname, target);
-				return -1;
-			}
-		}
-	}
-
-#ifdef HAVE_STATVFS
-skipremount:
-#endif
-	DEBUG("mounted '%s' on '%s', type '%s'", fsname, target, fstype);
-
-	return 0;
-}
 
 /*
  * Remove 'optional', 'create=dir', and 'create=file' from mntopt
