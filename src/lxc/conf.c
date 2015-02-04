@@ -1684,9 +1684,10 @@ static int setup_rootfs(struct lxc_conf *conf)
 
 	// First try mounting rootfs using a bdev
 	struct bdev *bdev = bdev_init(rootfs->path, rootfs->mount, rootfs->options);
+    DEBUG("mounting '%s' on '%s' with '%s'", rootfs->path, rootfs->mount, bdev->mntopts);
 	if (bdev && bdev->ops->mount(bdev) == 0) {
 		bdev_put(bdev);
-		DEBUG("mounted '%s' on '%s'", rootfs->path, rootfs->mount);
+		DEBUG("mounted__ '%s' on '%s'", rootfs->path, rootfs->mount);
 		return 0;
 	}
 	if (bdev)
